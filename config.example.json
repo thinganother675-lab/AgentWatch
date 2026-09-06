@@ -1,0 +1,28 @@
+{
+  "monitoredUserProfile": null,
+  "readerSid": null,
+  "physicalDriveNumber": 0,
+  "sampling": {
+    "fastSampleSeconds": 10,
+    "persistBatchMinutes": 5,
+    "hotFilesSeconds": 60,
+    "nvmeHealthMinutes": 15
+  },
+  "retention": { "minuteDays": 14, "fifteenMinuteDays": 180, "dailyDays": 0 },
+  "thresholds": {
+    "ramWarningMiB": 512,
+    "ramCriticalMiB": 256,
+    "ramSustainSeconds": 120,
+    "criticalPageOutputPerSecond": 100,
+    "codexWriteWarningMiBPerMinute": 100,
+    "codexWriteCriticalMiBPerMinute": 500,
+    "codexWriteWarningSeconds": 600,
+    "codexWriteCriticalSeconds": 300,
+    "hotWalMiB": 512,
+    "hotGrowthMiBPerTenMinutes": 500,
+    "ssdWarningC": 65,
+    "ssdCriticalC": 70,
+    "ownDatabaseMiB": 256,
+    "ownWalMiB": 32
+  }
+}

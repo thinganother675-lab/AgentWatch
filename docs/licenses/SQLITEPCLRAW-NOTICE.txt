@@ -1,0 +1,11 @@
+SQLitePCLRaw bundle_e_sqlite3, core, provider_e_sqlite3 and lib_e_sqlite3 packages 2.1.13
+Copyright 2014-2024 SourceGear, LLC
+Author: Eric Sink
+Package license: Apache-2.0. See APACHE-2.0.txt.
+Upstream: https://github.com/ericsink/SQLitePCL.raw
+
+The SQLite database engine itself is in the public domain:
+https://www.sqlite.org/copyright.html
+
+Identity/license/copyright fields above are copied from the installed NuGet package metadata.
+DOTNET-LICENSE.txt and DOTNET-THIRD-PARTY-NOTICES.txt are copied from the verified Microsoft .NET SDK distribution.

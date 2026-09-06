@@ -1,0 +1,11 @@
+.tools/
+**/bin/
+**/obj/
+artifacts/*
+!artifacts/.gitkeep
+.vs/
+*.user
+*.db
+*.db-wal
+*.db-shm
+TestResults/
