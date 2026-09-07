@@ -58,3 +58,6 @@ Auto-checkpoint/journal_size_limit alone cannot cap a WAL pinned by a reader. Be
 Corruption, unsupported schema, denied access and unavailable metrics are reported explicitly. Existing database bytes are not deleted, rewritten as a new database, or silently renamed. A newer schema requires a newer binary.
 
 Sustained anomaly observations coalesce under one event ID. The end timestamp is the last confirmed positive observation. Severity is the most recently observed level; the evidence dictionary retains the peak value for the episode. Open/closed state is as of the last persisted observation, not a live notification channel.
+## Version 0.2.0 additions
+
+Collector schema, metric IDs and aggregate codec are unchanged. The separate per-user usage schema, event schema, source missingness, session lifetime semantics, marker context and pricing rules are specified in SESSION_USAGE.md. Weekly reports separate factual data from interpretations and keep current collector metadata distinct from historical metric coverage.

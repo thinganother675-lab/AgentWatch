@@ -1,6 +1,6 @@
 # AgentWatch architecture
 
-Version 0.1.0, Windows 11 x64, .NET 10 LTS. This is the implementation design, not an approved Stage-0 artifact. The complete user specification is in USER_REQUIREMENTS.ru.md.
+Version 0.2.0, Windows 11 x64, .NET 10 LTS. This is the implementation design, not an approved Stage-0 artifact. The complete user specification is in USER_REQUIREMENTS.ru.md.
 
 ```text
 Windows Service / bounded foreground validation
@@ -44,3 +44,10 @@ Retention: daily, atomic rollup-before-delete
 Implementation and validation details are maintained in DATA_MODEL.md, OPERATIONS.md, SECURITY.md and PERFORMANCE.md.
 
 Batch compression uses Brotli Optimal after the measured comparison in PERFORMANCE.md: the same synthetic week shrank from about 57 MB to 14.6 MB and native logical writes including checkpoints fell from about 39.5 to 15.4 MB per synthetic day. The physical table remains WITHOUT ROWID; no sample interval, retained metric or codec version was changed. Fatal SCM-hosted failures terminate the process nonzero after runtime cleanup; a clean StopHost would not invoke recovery.
+## Version 0.2.0 query and usage layers
+
+The native polling loop, metric IDs, aggregate codec and collector DB schema stay unchanged. Weekly analysis reads existing buckets and metadata in one read transaction, including additional fast buckets for marker context outside the main period. It exposes metric valid durations, observed coverage, selected bounded episodes and separate evidence-based interpretations. Usage/markers/run manifests are independently read snapshots; the report states this boundary.
+
+On-demand usage-sync is a separate command in the same EXE. It projects local Codex/Claude JSONL onto whitelisted accounting metadata and stores it in a different per-user SQLite database, with atomic byte cursors and deduplicated identities. No transcript parsing is added to the service. Unknown end/model/effort/final tokens/prices remain null. Per-session resource context is temporal overlap with group totals, not a fabricated process/session mapping. IEventQueryService exposes stable fact events without implementing MCP.
+
+LocalLog creates a unique run manifest and numbered segments. Old segments and legacy logs are retained. Build/publish/test outputs are also unique. Update-Service.ps1 is an explicit, separately invoked upgrade that archives the old executable and stopped history/logs before replacement. Preparation never invokes that mutation against the running service. See WEEKLY_TRIAL_DECISIONS.md and SESSION_USAGE.md for source limitations and acceptance criteria.

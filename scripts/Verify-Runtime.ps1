@@ -1,12 +1,13 @@
 [CmdletBinding()]
-param([string]$OutputDirectory = (Join-Path $PSScriptRoot '..\artifacts\runtime-validation'))
+param([string]$OutputDirectory = (Join-Path $PSScriptRoot ('..\artifacts\runtime-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))), [string]$Executable)
 $ErrorActionPreference = 'Stop'
 $taskRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $data = [IO.Path]::GetFullPath($OutputDirectory)
 if (-not $data.StartsWith($taskRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Validation must stay within this repository.' }
 if (Test-Path -LiteralPath $data) { throw 'Choose a fresh validation directory.' }
 [IO.Directory]::CreateDirectory($data) | Out-Null
-$binary = Join-Path $taskRoot 'artifacts\publish\AgentWatch.exe'
+$binary = if ($Executable) { [IO.Path]::GetFullPath($Executable) } elseif (Test-Path -LiteralPath (Join-Path $taskRoot 'artifacts\latest-build.json')) { (Get-Content -LiteralPath (Join-Path $taskRoot 'artifacts\latest-build.json') -Raw | ConvertFrom-Json).File } else { Join-Path $taskRoot 'artifacts\publish\AgentWatch.exe' }
+if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw 'Published executable was not found.' }
 function Start-OwnedRun([int]$Seconds) {
     $info = [Diagnostics.ProcessStartInfo]::new($binary)
     $info.UseShellExecute=$false; $info.CreateNoWindow=$true
@@ -62,3 +63,5 @@ $summary = [ordered]@{ TimestampUtc=[DateTimeOffset]::UtcNow.ToString('O'); Sha2
     ScmServiceLifecycle='not exercised: this test uses only isolated foreground instances' }
 $summary | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $data 'validation.json') -Encoding utf8
 $summary | ConvertTo-Json -Depth 5
+# The corrupt-input probe deliberately returns 1; successful verification returns 0.
+$global:LASTEXITCODE = 0

@@ -53,7 +53,7 @@ Retention is daily and transactional. `dailyDays: 0` preserves daily history. No
 
 An inaccessible process, vanished PID or missing counter is not a zero measurement. Process identities re-baseline after restart, missed observations, long delays and clock jumps. Sleep/downtime is excluded from fast coverage. NVMe lifetime-counter endpoints can span sleep/downtime; reports show their actual times. Do not interpret either time domain as laptop uptime outside monitor coverage.
 
-Storage errors keep at most roughly six hours of pending batches in RAM; oldest batches then drop with an explicit coverage-loss event. A WAL at 64 MiB triggers a nonblocking checkpoint; a pinned external reader pauses persistence until it releases its snapshot. Own log files remain bounded around 2 MiB total. Look at the last error and release long report/SQLite sessions rather than deleting a live WAL. Disk-full/denied access may prevent the final flush; the error log reports the remaining batch count. Fatal startup/schema errors terminate an SCM-hosted process with Environment.Exit(1), after the runtime has unwound its cleanup. A clean StopHost alone would not trigger Windows recovery. Foreground validation returns exit code 1 through the host. Normal user/SCM stops remain graceful with the final batch flush.
+Storage errors keep at most roughly six hours of pending batches in RAM; oldest batches then drop with an explicit coverage-loss event. A WAL at 64 MiB triggers a nonblocking checkpoint; a pinned external reader pauses persistence until it releases its snapshot. Since 0.2.0, each run retains a manifest and numbered ~1 MiB diagnostic segments under logs/runs; total log history is not automatically deleted. Legacy root log files remain untouched. Look at the last error and release long report/SQLite sessions rather than deleting a live WAL. Disk-full/denied access may prevent the final flush; the error log reports the remaining batch count. Fatal startup/schema errors terminate an SCM-hosted process with Environment.Exit(1), after the runtime has unwound its cleanup. A clean StopHost alone would not trigger Windows recovery. Foreground validation returns exit code 1 through the host. Normal user/SCM stops remain graceful with the final batch flush.
 
 ## Backup and corruption
 
@@ -73,7 +73,7 @@ On detected corruption, preserve the existing files and logs; do not delete WAL/
 
 ## Upgrade and uninstall
 
-Keep a copy of the published new EXE outside Program Files. In elevated PowerShell, invoke the existing `uninstall` from a publish copy; it disables/stops/removes AgentWatch but retains ProgramData history/config. Then run the new published `install`, which preserves history, validates the schema and reapplies ACLs. V1 supports schema 1 only and rejects future versions. Back up before a later version with real schema migrations.
+For 0.1.0 → 0.2.0 use scripts/Update-Service.ps1 -Plan for read-only inspection, then explicitly invoke the script in elevated PowerShell when ready to restart. It preserves the service configuration, archives the previous EXE and stopped DB/WAL/SHM/config/logs, replaces only the EXE, and checks fresh persistence. On failure it attempts binary rollback while retaining all history and logs. Both versions use collector schema 1. This preparation did not perform the actual upgrade. See WEEKLY_TRIAL.md. Uninstall/reinstall remains available for deliberate maintenance, not required for this update.
 
 ```powershell
 .\artifacts\publish\AgentWatch.exe uninstall

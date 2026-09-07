@@ -1,3 +1,5 @@
+> Historical 0.1.0 evidence as of 2026-09-06. For the current candidate and installation state, see [VALIDATION_0.2.md](VALIDATION_0.2.md).
+
 # Acceptance record — AgentWatch 0.1.0
 
 Validation date: 2026-09-06. This is a tested first implementation, not a claim of completed multi-day burn-in. Current install state: **service not installed**; bounded validation processes stop after their checks. The development token is not elevated. The shipping EXE, test logs and exact hashes are described in `artifacts/build/publish.json`, `artifacts/runtime-final/validation.json` and PERFORMANCE.md.

@@ -3,7 +3,8 @@
 param(
     [ValidateRange(120,3600)][int]$DurationSeconds = 720,
     [ValidateRange(30,300)][int]$WarmupSeconds = 60,
-    [string]$OutputDirectory = (Join-Path $PSScriptRoot '..\artifacts\performance')
+    [string]$OutputDirectory = (Join-Path $PSScriptRoot ('..\artifacts\performance-' + (Get-Date -Format 'yyyyMMdd-HHmmss'))),
+    [string]$Executable
 )
 $ErrorActionPreference = 'Stop'
 $taskRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
@@ -11,7 +12,8 @@ $outputPath = [IO.Path]::GetFullPath($OutputDirectory)
 if (-not $outputPath.StartsWith($taskRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase)) { throw 'Output must stay inside the AgentWatch workspace.' }
 if (Test-Path -LiteralPath (Join-Path $outputPath 'agentwatch.db')) { throw 'Choose a fresh output directory; this measurement must not merge earlier runs.' }
 [IO.Directory]::CreateDirectory($outputPath) | Out-Null
-$binary = Join-Path $taskRoot 'artifacts\publish\AgentWatch.exe'
+$binary = if ($Executable) { [IO.Path]::GetFullPath($Executable) } elseif (Test-Path -LiteralPath (Join-Path $taskRoot 'artifacts\latest-build.json')) { (Get-Content -LiteralPath (Join-Path $taskRoot 'artifacts\latest-build.json') -Raw | ConvertFrom-Json).File } else { Join-Path $taskRoot 'artifacts\publish\AgentWatch.exe' }
+if (-not (Test-Path -LiteralPath $binary -PathType Leaf)) { throw 'Published executable was not found.' }
 Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;

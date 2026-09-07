@@ -13,6 +13,7 @@ namespace AgentWatch.Hosting;
 
 public sealed class WatchRuntime(WatchConfig config, string dataDirectory, LocalLog log)
 {
+    public bool FinalPersistenceSucceeded { get; private set; }
     public async Task Run(CancellationToken cancellationToken)
     {
         using var database = new AgentWatchDatabase(Path.Combine(dataDirectory, "agentwatch.db"));
@@ -32,7 +33,7 @@ public sealed class WatchRuntime(WatchConfig config, string dataDirectory, Local
                 detector.Event(startedUtc, "service-restart-gap", "info", "Service restarted; process counters are re-baselined and unobserved time is excluded.",
                     new() { ["secondsSinceLastPersistedSample"] = Math.Max(0, (startedUtc - oldUtc).TotalSeconds) });
         }
-        log.Write("INFO", "AgentWatch 0.1.0 starting; local collection only.");
+        log.Write("INFO", "AgentWatch 0.2.0 starting; local collection only.");
         var latest = engine.Collect();
         collecting.HotFiles.AddRange(engine.CollectHotFiles()); detector.EvaluateHotFiles(collecting.HotFiles);
         engine.StartNvme();
@@ -55,7 +56,10 @@ public sealed class WatchRuntime(WatchConfig config, string dataDirectory, Local
         {
             if (shutdown) collecting.Frames.AddRange(aggregator.Drain(DateTimeOffset.UtcNow, true));
             collecting.Anomalies.AddRange(detector.Drain());
-            collecting.Metadata["appVersion"] = "0.1.0";
+            collecting.Metadata["appVersion"] = "0.2.0";
+            collecting.Metadata["runId"] = log.RunId;
+            collecting.Metadata["logFailures"] = log.Failures.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            collecting.Metadata["persistBatchSeconds"] = (config.Sampling.PersistBatchMinutes * 60).ToString(System.Globalization.CultureInfo.InvariantCulture);
             collecting.Metadata["startedUtc"] = startedUtc.ToString("O");
             collecting.Metadata["lastSampleUtc"] = latest.TimestampUtc.ToString("O");
             collecting.Metadata["lastFlushUtc"] = DateTimeOffset.UtcNow.ToString("O");
@@ -116,7 +120,7 @@ public sealed class WatchRuntime(WatchConfig config, string dataDirectory, Local
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { }
         finally
         {
-            Capture(); detector.CloseAll(DateTimeOffset.UtcNow); Flush(true);
+            Capture(); detector.CloseAll(DateTimeOffset.UtcNow); Flush(true); FinalPersistenceSucceeded = queue.Count == 0;
             log.Write("INFO", "AgentWatch stopped; final flush attempted.");
         }
     }
@@ -126,10 +130,11 @@ public sealed class MonitorWorker(WatchRuntime runtime, IHostApplicationLifetime
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        try { await runtime.Run(stoppingToken); }
+        try { await runtime.Run(stoppingToken); log.Complete(runtime.FinalPersistenceSucceeded ? "stopped" : "stopped-with-unpersisted-data"); }
         catch (Exception e)
         {
             log.Write("ERROR", $"Fatal monitor failure: {e.GetType().Name}: {e.Message}");
+            log.Complete("failed");
             // StopHost reports a clean SERVICE_STOPPED; an SCM-hosted fatal failure must terminate nonzero for recovery.
             if (Microsoft.Extensions.Hosting.WindowsServices.WindowsServiceHelpers.IsWindowsService()) Environment.Exit(1);
             Environment.ExitCode = 1; lifetime.StopApplication();

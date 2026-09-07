@@ -4,29 +4,59 @@ using Microsoft.Extensions.Logging;
 
 namespace AgentWatch.Hosting;
 
-public sealed class LocalLog(string directory)
+public sealed class LocalLog
 {
     private readonly object sync = new();
+    private readonly long maximumSegmentBytes;
+    private int segment;
+    private string? currentPath;
+    private RunRecord? record;
+    public string RunId { get; } = RunJournal.NewId();
+    public string RunDirectory { get; }
     public long Failures { get; private set; }
+    public LocalLog(string directory, long maximumSegmentBytes = 1024 * 1024)
+    {
+        if (maximumSegmentBytes < 1024) throw new ArgumentOutOfRangeException(nameof(maximumSegmentBytes));
+        this.maximumSegmentBytes = maximumSegmentBytes;
+        RunDirectory = Path.Combine(directory, "logs", "runs", RunId);
+    }
+    public void BeginRun(AgentWatch.Configuration.WatchConfig config, string mode)
+    {
+        record = new(RunId, "0.2.0", DateTimeOffset.UtcNow, null, Environment.ProcessId, mode, "started", config.Sampling, 0);
+        RunJournal.Save(RunDirectory, record, true);
+        Write("INFO", $"Run {RunId} started; AgentWatch 0.2.0, mode={mode}.");
+    }
+    public void Complete(string outcome)
+    {
+        lock (sync)
+        {
+            if (record is null || record.EndedUtc.HasValue) return;
+            Write("INFO", $"Run {RunId} completed: {outcome}.");
+            record = record with { EndedUtc = DateTimeOffset.UtcNow, Outcome = outcome, LogFailures = Failures };
+            try { RunJournal.Save(RunDirectory, record, false); }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Failures++; }
+        }
+    }
     public void Write(string level, string message)
     {
         lock (sync)
         {
             try
             {
-                Directory.CreateDirectory(directory);
-                var path = Path.Combine(directory, "agentwatch.log");
-                if (File.Exists(path) && new FileInfo(path).Length >= 1024 * 1024)
-                    File.Move(path, Path.Combine(directory, "agentwatch.previous.log"), true);
+                Directory.CreateDirectory(RunDirectory);
+                if (currentPath is null || new FileInfo(currentPath).Length >= maximumSegmentBytes)
+                {
+                    currentPath = Path.Combine(RunDirectory, $"diagnostic-{segment++:D6}.log");
+                    using var created = new FileStream(currentPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read);
+                }
                 var text = message.Replace('\r', ' ').Replace('\n', ' ');
                 if (text.Length > 1800) text = text[..1800];
-                File.AppendAllText(path, $"{DateTimeOffset.UtcNow:O} {level} {text}{Environment.NewLine}");
+                File.AppendAllText(currentPath, $"{DateTimeOffset.UtcNow:O} {level} {text}{Environment.NewLine}");
             }
             catch (Exception e) when (e is IOException or UnauthorizedAccessException) { Failures++; }
         }
     }
 }
-
 public sealed class LocalLogProvider(LocalLog log) : ILoggerProvider
 {
     private sealed class Adapter(LocalLog target) : ILogger

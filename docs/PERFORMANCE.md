@@ -1,3 +1,5 @@
+> Historical 0.1.0 evidence as of 2026-09-06. For the current candidate and installation state, see [PERFORMANCE_0.2.md](PERFORMANCE_0.2.md).
+
 # Performance validation — 2026-09-06
 
 Windows 11 x64 build 26200, 8 logical processors, physical RAM reported by Windows 8,300,388,352 bytes. Ordinary user token, Russian Windows counters. Codex was present; Claude was absent. The measured program is self-contained, using the same Generic Host and monitoring loop as the service. Actual SCM/LocalSystem operation is still an elevated validation step.

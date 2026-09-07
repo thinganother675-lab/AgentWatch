@@ -117,7 +117,7 @@ public sealed class CollectorEngine : IDisposable
         }
         NvmeHealth? smart = null;
         if (!TryCompleteNvme(out smart)) Health.Record("Nvme", "WARN", "NVMe query did not complete within the snapshot timeout.", false, true);
-        return new("0.1.0", DateTimeOffset.UtcNow, Profile, current, processes.LastReadings, files, smart, Health.States.ToArray());
+        return new("0.2.0", DateTimeOffset.UtcNow, Profile, current, processes.LastReadings, files, smart, Health.States.ToArray());
     }
     public static long FileSize(string path)
     {

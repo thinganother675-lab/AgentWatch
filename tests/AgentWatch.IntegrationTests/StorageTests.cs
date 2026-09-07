@@ -15,7 +15,10 @@ public sealed class TestDirectory : IDisposable
         var root = new DirectoryInfo(AppContext.BaseDirectory);
         while (root is not null && !File.Exists(Path.Combine(root.FullName, "AgentWatch.sln"))) root = root.Parent;
         if (root is null) throw new InvalidOperationException("Test workspace root not found.");
-        DirectoryPath = Path.Combine(root.FullName, "artifacts", "tests", "data", Guid.NewGuid().ToString("N"));
+        var artifactRoot = Environment.GetEnvironmentVariable("AGENTWATCH_TEST_ARTIFACTS") ?? Path.Combine(root.FullName, "artifacts", "tests", "run-" + DateTimeOffset.UtcNow.ToString("yyyyMMdd-HHmmss"));
+        artifactRoot = Path.GetFullPath(artifactRoot);
+        if (!artifactRoot.StartsWith(root.FullName + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) throw new InvalidOperationException("Test artifacts must remain inside the repository.");
+        DirectoryPath = Path.Combine(artifactRoot, "data", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(DirectoryPath);
     }
     public void Dispose() => Directory.Delete(DirectoryPath, true);

@@ -1,107 +1,91 @@
-# AgentWatch 0.1.0
+# AgentWatch 0.2.0
 
-Локальная служба наблюдения за Windows 11 x64 во время работы с Codex и Claude. Показывает нагрузку CPU, доступную RAM и commit, paging, логический I/O деревьев агентов, размеры четырёх известных файлов Codex и здоровье NVMe. История остаётся на компьютере. Это первая версия для накопления эксплуатационной статистики; длительный burn-in ещё предстоит.
+Локальная служба наблюдения за Windows 11 x64 и CLI для разбора нагрузки Codex/Claude. Служба собирает CPU, RAM/commit, paging/disk, logical I/O деревьев агентов, metadata четырёх файлов Codex и NVMe health. Недельный отчёт связывает эти измерения по времени с сессиями, usage и явными отметками пользователя.
+
+Отчёт разделяет **FACTS** и **INTERPRETATION**: выводы имеют confidence, evidence и альтернативные объяснения. Неизвестные поля остаются null, временное совпадение не объявляется причинной связью, а CPU/I/O не распределяется между параллельными сессиями без доказательств.
 
 ## Быстрый старт
 
-Готовый автономный файл после сборки: `artifacts/publish/AgentWatch.exe`. Установленный .NET, SDK и NuGet нужны только разработчику. Runtime, managed dependencies и native SQLite входят в EXE. При первом запуске .NET извлекает native-компоненты в свой кэш; размер EXE не равен потреблению RAM.
-
-Из корня репозитория:
+Сборка создаёт уникальный каталог с автономным EXE, тестовыми результатами и SHA-256 manifest. Установленный .NET нужен только разработчику; runtime и native SQLite входят в EXE. Предыдущие сборки и логи не перезаписываются.
 
 ```powershell
-.\artifacts\publish\AgentWatch.exe snapshot
-.\artifacts\publish\AgentWatch.exe doctor
+.\scripts\Build.ps1
+$build = Get-Content -LiteralPath .\artifacts\latest-build.json -Raw | ConvertFrom-Json
+$aw = $build.File
+& $aw version
+& $aw status
 ```
 
-Для постоянного сбора выполните **в PowerShell, запущенном от администратора**:
+Полный сценарий — [WEEKLY_TRIAL.md](docs/WEEKLY_TRIAL.md).
+
+Для первой установки, если службы ещё нет, выполните в PowerShell **от имени администратора**:
 
 ```powershell
-& 'C:\sarychev\Codex\AgentWatch\artifacts\publish\AgentWatch.exe' install
+& $aw install
 ```
 
-Установщик копирует EXE в `%ProgramFiles%\AgentWatch`, создаёт `%ProgramData%\AgentWatch`, сохраняет профиль и SID пользователя, регистрирует LocalSystem service с отложенным автозапуском и проверяет появление истории. При установке из другого административного аккаунта укажите `--profile` и `--reader-sid`; пример приведён в [OPERATIONS.md](docs/OPERATIONS.md).
-
-Без повышения прав можно выполнить ограниченный прогон в собственном каталоге:
+Если служба уже работает, её можно оставить собирать данные и читать старую историю новым CLI. Обновление выполняется отдельно, только когда готовы к перезапуску:
 
 ```powershell
-.\artifacts\publish\AgentWatch.exe run --duration 6m --data-dir .\artifacts\manual
-.\artifacts\publish\AgentWatch.exe report --since 24h --data-dir .\artifacts\manual
+.\scripts\Update-Service.ps1 -Plan  # Только чтение, без остановки.
+# Позже, в повышенном PowerShell:
+.\scripts\Update-Service.ps1
 ```
 
-## Запросы
+Скрипт обновления архивирует прежний EXE и согласованный комплект истории/config/logs, заменяет EXE, проверяет новый запуск и при ошибке пытается вернуть старый EXE. Во время разработки обновление установленной службы автоматически не выполняется.
+
+## Полезные команды
 
 ```powershell
-.\artifacts\publish\AgentWatch.exe status
-.\artifacts\publish\AgentWatch.exe doctor --json
-.\artifacts\publish\AgentWatch.exe snapshot --json
-.\artifacts\publish\AgentWatch.exe report --since 24h
-.\artifacts\publish\AgentWatch.exe report --since 7d --json
-.\artifacts\publish\AgentWatch.exe report --since 30d
-.\artifacts\publish\AgentWatch.exe agents --since 7d
-.\artifacts\publish\AgentWatch.exe disk --since 1h
-.\artifacts\publish\AgentWatch.exe disk --since 7d
-.\artifacts\publish\AgentWatch.exe anomalies --since 7d
-.\artifacts\publish\AgentWatch.exe self --since 7d
-.\artifacts\publish\AgentWatch.exe report --from 2026-09-01T00:00:00Z --to 2026-09-06T00:00:00Z
+& $aw mark 'ноут начал тормозить'
+& $aw mark 'задержка после запуска сборки' --at '2026-09-07T16:20:00+03:00'
+& $aw usage-sync --since 7d --json
+& $aw sessions --since 7d --json
+& $aw weekly --since 7d
+& $aw weekly --since 7d --json
+& $aw weekly --since 7d --output .\artifacts\my-week.md
+& $aw events --since 24h --json
+& $aw runs --since 7d --json
+& $aw report --since 24h
+& $aw agents --since 7d
+& $aw disk --since 7d
+& $aw anomalies --since 7d
+& $aw self --since 7d
+& $aw snapshot --json
+& $aw doctor --json
 ```
 
-`report`, `agents`, `disk`, `anomalies`, `self` используют один query layer. В текстовом режиме выбирается нужный раздел; в JSON возвращается общий DTO `schemaVersion: 1` с контекстом периода и ограничениями измерений. При отсутствии истории запрос сообщает ошибку; `snapshot` работает независимо от SQLite. Все команды сбора и запросов принимают `--data-dir`.
+`weekly` включает все доступные метрики ±15 минут вокруг каждой включённой отметки, независимо от попадания в список выбранных эпизодов. Сессии показывают start/first observed/last activity/end, модель и effort из источника, input/cache/output/reasoning tokens с явной семантикой, неизвестную либо рассчитанную по заданному тарифу cost estimate. Claude reported-only output/reasoning отделены от final. Детали форматов и оценки стоимости — [SESSION_USAGE.md](docs/SESSION_USAGE.md).
 
-## Что именно измеряется
+`usage-sync` выполняется по запросу в отдельном CLI-процессе; служба не читает transcripts. По умолчанию импорт ограничен 64 МиБ и 100 изменённых файлов. При ограничении повторный вызов продолжает чтение с сохранённого offset. В пользовательское хранилище попадают только разрешённые поля metadata, без текстов сообщений, команд и tool results. Перед недельным отчётом повторите импорт.
 
-| Слой | Источник | Значение |
-|---|---|---|
-| CPU и RAM | GetSystemTimes, GlobalMemoryStatusEx, GetPerformanceInfo | Нагрузка всей машины, физическая память, commit |
-| Paging | Четыре английских PDH counters | Pages Input/Output — страницы; Page Reads/Writes — операции |
-| Windows disk | PhysicalDisk(_Total) | Суммарный поток всех физических дисков Windows |
-| Codex / Claude | GetProcessTimes, GetProcessIoCounters, process memory | Наблюдаемый логический I/O и ресурсы проверенного дерева процессов |
-| NVMe | IOCTL_STORAGE_QUERY_PROPERTY, SMART log 02h | Lifetime host counters, дельты между снимками, температура и health |
-| Файлы Codex | Только metadata | Размер и время изменения logs_2.sqlite, state_5.sqlite и их WAL |
+Отметки находятся в `%LocalAppData%\AgentWatch\marks`, usage — в `%LocalAppData%\AgentWatch\usage`. Для них не нужны административные права. `--marks-dir` и `--usage-dir` позволяют выбрать отдельные каталоги. Основная история службы остаётся в `%ProgramData%\AgentWatch`; команды принимают `--data-dir` для другой истории. История, отсутствующая или недоступная в источниках, не считается нулевым использованием.
 
-**Логические записи процесса, поток физических дисков Windows и NVMe host writes — разные величины. NVMe host writes не являются NAND writes.** Сумма working sets может дважды учитывать общую память. Время присутствия процессов не доказывает активную работу человека. Короткие процессы между опросами и последняя запись завершившегося процесса могут быть пропущены.
+## Нагрузка и хранение
 
-## Режим хранения
+- Быстрый опрос — 10 секунд; metadata файлов — 60 секунд; NVMe — 15 минут. Частота существующих native collectors не изменена.
+- Минутные агрегаты накапливаются в RAM и сохраняются одной транзакцией раз в 5 минут и при нормальной остановке. Отдельно хранится последний диагностический snapshot.
+- Последние 14 дней — минуты; до 180 дней — 15 минут; затем — сутки без автоматического удаления. Downsampling выполняется атомарно раз в сутки.
+- SQLite WAL/NORMAL, один writer, read-only reports, без регулярного VACUUM. Пропуски не превращаются в нулевую нагрузку. При недоступности диска буфер ограничен примерно шестью часами, затем потери покрытия фиксируются явно.
+- Каждый запуск сборщика сохраняет `logs/runs/<run-id>/run.json` и последовательные сегменты diagnostic-*.log. Ротация не удаляет старые сегменты; архивирование журналов ручное. Сборки и проверочные запуски также используют новые каталоги.
 
-- Быстрый опрос — 10 секунд; metadata файлов — 60 секунд; NVMe — 15 минут.
-- Raw samples обрабатываются в RAM. Минутные агрегаты записываются одной транзакцией раз в 5 минут и при нормальной остановке.
-- Последние 14 дней — минуты; до 180 дней — 15 минут; затем — сутки без автоматического удаления.
-- Downsampling выполняется раз в сутки: сначала запись укрупнённых данных, затем удаление детальных в той же транзакции.
-- SQLite WAL, synchronous NORMAL, один writer, read-only reports, без регулярного VACUUM. Пропуски наблюдения не превращаются в нулевую нагрузку.
-- При недоступности диска буфер ограничен примерно шестью часами. После этого старые незаписанные партии отбрасываются с событием о потере покрытия.
+Нормальная задержка отчёта — до пяти минут. При аварийном завершении возможна потеря незаписанной партии, при сбое питания — также ещё не синхронизированных данных WAL. Повреждённая история не заменяется пустой БД. Недельная стабильность и полезность выводов требуют реальной эксплуатации; короткий тест не заменяет сутки измерений.
 
-Отчёты видят последнюю сохранённую партию, поэтому обычная задержка — до пяти минут. При аварийном завершении возможна потеря последней партии; при сбое питания — также ещё не синхронизированных данных WAL. Файлы повреждённой БД сохраняются для явного восстановления оператором.
-
-## Настройка и удаление
-
-Конфигурация: `%ProgramData%\AgentWatch\config.json`. Полный пример с начальными значениями — [config.example.json](config.example.json). Изменения применяются после перезапуска службы. Невалидные диапазоны заменяются безопасными начальными значениями с предупреждением; повреждённый JSON требует исправления.
+## Проверки и документация
 
 ```powershell
-# Повышенный PowerShell; история сохраняется.
-.\artifacts\publish\AgentWatch.exe uninstall
-# Явное удаление собственной истории и конфигурации:
-.\artifacts\publish\AgentWatch.exe uninstall --purge-data --confirm-purge
-```
-
-## Сборка и проверка
-
-```powershell
-# PowerShell 7, Windows 11 x64; SDK и caches только в .tools.
-.\scripts\Bootstrap-Dotnet.ps1
+.\scripts\Bootstrap-Dotnet.ps1   # При отсутствии SDK в .tools.
 .\scripts\Build.ps1
 .\scripts\Verify-Runtime.ps1
-.\scripts\Measure-Overhead.ps1 -DurationSeconds 720 -OutputDirectory .\artifacts\new-measurement
+.\scripts\Measure-Overhead.ps1 -DurationSeconds 360
 ```
 
-SDK закреплён в `global.json`; NuGet-граф и content hashes — в `packages.lock.json` каждого проекта. `Build.ps1` выполняет clean, locked restore, Release build, tests и self-contained single-file publish. Тестовый helper не входит в поставку. Сведения о native runtime и лицензиях — [DEPENDENCIES.md](docs/DEPENDENCIES.md).
+SDK и NuGet dependency graph закреплены, дополнительных зависимостей для usage/events не добавлено. `Build.ps1` выполняет locked restore, Release build с warnings-as-errors, тесты и self-contained single-file publish. Обновлённые validation scripts берут EXE из latest-build.json либо явного `-Executable` и управляют только созданными ими тестовыми процессами.
 
-## Документация
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md), [DATA_MODEL.md](docs/DATA_MODEL.md), [WEEKLY_TRIAL_DECISIONS.md](docs/WEEKLY_TRIAL_DECISIONS.md) — устройство, семантика и решения.
+- [WEEKLY_TRIAL.md](docs/WEEKLY_TRIAL.md), [SESSION_USAGE.md](docs/SESSION_USAGE.md) — недельное испытание и новые контракты.
+- [OPERATIONS.md](docs/OPERATIONS.md), [SECURITY.md](docs/SECURITY.md), [DEPENDENCIES.md](docs/DEPENDENCIES.md) — эксплуатация, границы доступа и зависимости.
+- [VALIDATION_0.2.md](docs/VALIDATION_0.2.md), [PERFORMANCE_0.2.md](docs/PERFORMANCE_0.2.md) — проверки новой версии. Исходные измерения 0.1.0 сохранены отдельно.
+- [MCP_FUTURE.md](docs/MCP_FUTURE.md) — будущий adapter; MCP сейчас не реализован.
 
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — архитектура, решения и первичные источники.
-- [DATA_MODEL.md](docs/DATA_MODEL.md) — единицы, схема, retention, точность и границы периодов.
-- [SECURITY.md](docs/SECURITY.md) — данные, ACL и границы привилегий.
-- [OPERATIONS.md](docs/OPERATIONS.md) — установка, эксплуатация, backup, recovery и обновление.
-- [PERFORMANCE.md](docs/PERFORMANCE.md) — реальные измерения и границы выводов.
-- [VALIDATION.md](docs/VALIDATION.md) — выполненные проверки и ещё не проверенные условия.
-- [MCP_FUTURE.md](docs/MCP_FUTURE.md) — будущий adapter и token analytics; в v1 они не реализованы.
-
-AgentWatch не оптимизирует Windows, не меняет Defender, pagefile, power plan или настройки агентов, не читает разговоры, не отправляет телеметрию и не открывает сетевой listener.
+AgentWatch не оптимизирует Windows, не меняет Defender/pagefile/power plan, не открывает сетевой listener и не отправляет телеметрию. Полная история команд, dashboard, GUI и автоматическая диагностика причин не реализованы.
