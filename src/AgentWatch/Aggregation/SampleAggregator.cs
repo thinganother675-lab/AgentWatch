@@ -65,7 +65,7 @@ public sealed class SampleAggregator
             Add(Metric.PagesInput, pdh.PagesInputPerSecond); Add(Metric.PagesOutput, pdh.PagesOutputPerSecond);
             Add(Metric.PageReads, pdh.PageReadsPerSecond); Add(Metric.PageWrites, pdh.PageWritesPerSecond);
             Add(Metric.PhysicalDiskRead, pdh.PhysicalDiskReadBytesPerSecond); Add(Metric.PhysicalDiskWrite, pdh.PhysicalDiskWriteBytesPerSecond);
-            Add(Metric.DiskQueue, pdh.PhysicalDiskQueueLength); Add(Metric.DiskIdle, pdh.PhysicalDiskIdlePercent);
+            Add(Metric.DiskQueue, pdh.PhysicalDiskQueueLength); Add(Metric.DiskIdle, AgentWatch.Collectors.MetricValidity.DiskIdle(pdh.PhysicalDiskIdlePercent));
             if (s.Memory is { } memory)
             {
                 Add(Metric.EstimatedPageIn, pdh.PagesInputPerSecond * memory.PageSize);

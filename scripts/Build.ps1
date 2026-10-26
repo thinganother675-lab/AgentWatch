@@ -4,7 +4,7 @@ $ErrorActionPreference = 'Stop'
 $taskRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
 $dotnet = Join-Path $taskRoot '.tools\dotnet\dotnet.exe'
 if (-not (Test-Path -LiteralPath $dotnet)) { throw 'Run scripts/Bootstrap-Dotnet.ps1 first.' }
-if (-not $OutputDirectory) { $OutputDirectory = Join-Path $taskRoot ('artifacts\releases\0.2.0-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [Guid]::NewGuid().ToString('N').Substring(0,8)) }
+if (-not $OutputDirectory) { $OutputDirectory = Join-Path $taskRoot ('artifacts\releases\0.2.1-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [Guid]::NewGuid().ToString('N').Substring(0,8)) }
 $buildRoot = [IO.Path]::GetFullPath($OutputDirectory)
 if (-not $buildRoot.StartsWith($taskRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Build artifacts must remain inside this workspace.' }
 if (Test-Path -LiteralPath $buildRoot) { throw 'Choose a new build output directory; prior artifacts are never overwritten.' }

@@ -64,7 +64,7 @@ try {
     $staged=Join-Path ([IO.Path]::GetDirectoryName($installed)) ('AgentWatch.new-' + [Guid]::NewGuid().ToString('N') + '.exe')
     Copy-Item -LiteralPath $source -Destination $staged -ErrorAction Stop
     if ((Get-FileHash -LiteralPath $staged).Hash -ne $newHash) { throw 'Staged copy hash mismatch.' }
-    [IO.File]::Move($staged,$installed,$true); $replaced=$true
+    [IO.File]::Replace($staged,$installed,[NullString]::Value); $replaced=$true
     $started=[DateTimeOffset]::UtcNow
     Start-Service -Name AgentWatch -ErrorAction Stop
     $controller=Get-Service AgentWatch; $controller.WaitForStatus([ServiceProcess.ServiceControllerStatus]::Running,[TimeSpan]::FromSeconds(30))
@@ -85,7 +85,7 @@ try {
         (Get-Service AgentWatch).WaitForStatus([ServiceProcess.ServiceControllerStatus]::Stopped,[TimeSpan]::FromSeconds(45))
         $rollback=Join-Path ([IO.Path]::GetDirectoryName($installed)) ('AgentWatch.rollback-' + [Guid]::NewGuid().ToString('N') + '.exe')
         Copy-Item -LiteralPath (Join-Path $archive 'AgentWatch.previous.exe') -Destination $rollback -ErrorAction Stop
-        [IO.File]::Move($rollback,$installed,$true)
+        [IO.File]::Replace($rollback,$installed,[NullString]::Value)
     }
     if ($wasRunning -and $stopped) { Start-Service AgentWatch -ErrorAction Stop }
     Write-Error "Update failed; archive retained at $archive. $($failure.Exception.Message)"

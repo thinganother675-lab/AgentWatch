@@ -42,6 +42,11 @@ public sealed class PdhCollector : IDisposable
                 errors[Paths[i]] = $"PDH 0x{result:X8}, status 0x{value.Status:X8}";
                 return null;
             }
+            if (i == 7 && MetricValidity.DiskIdle(value.DoubleValue) is null)
+            {
+                errors[Paths[i]] = "Out-of-range disk idle percentage; sample excluded (expected 0..100).";
+                return null;
+            }
             errors.Remove(Paths[i]);
             return value.DoubleValue;
         }

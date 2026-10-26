@@ -73,11 +73,24 @@ public sealed partial class ReportService(string databasePath, ThresholdConfig? 
         var files = new Dictionary<string, HotFileWindow>(); var nvmeDays = new SortedDictionary<long, NvmeWindow>();
         NvmeWindow? nvmeTotal = null; AggregateFrame? currentFrame = null;
         long? first = null, last = null; var resolution = 60; var codexWalSeconds = 0.0;
+        double excludedIdleSeconds = 0;
         foreach (var row in HistoryReader.Read(connection, weekly?.ReadFromUtc ?? period.FromUtc, weekly?.ReadToUtc ?? period.ToUtc, transaction: transaction))
         {
             cancellationToken.ThrowIfCancellationRequested();
             var contextFrame = row.Kind == 0 ? AggregateCodec.Decode(row.BucketUnixSeconds, row.ResolutionSeconds, row.Payload) : null;
-            if (contextFrame is not null) weekly?.ObserveContext(contextFrame);
+            if (contextFrame is not null)
+            {
+                var idle = contextFrame[Metric.DiskIdle];
+                if (idle.Weight > 0 && (idle.Minimum < 0 || idle.Maximum > 100))
+                {
+                    // Legacy aggregates cannot separate valid samples from invalid ones.
+                    contextFrame.Metrics[(int)Metric.DiskIdle] = default;
+                    var start = DateTimeOffset.FromUnixTimeSeconds(row.BucketUnixSeconds);
+                    if (start < period.ToUtc && start.AddSeconds(row.ResolutionSeconds) > period.FromUtc)
+                        excludedIdleSeconds += idle.Weight;
+                }
+                weekly?.ObserveContext(contextFrame);
+            }
             var rowStart = DateTimeOffset.FromUnixTimeSeconds(row.BucketUnixSeconds);
             if (rowStart >= period.ToUtc || rowStart.AddSeconds(row.ResolutionSeconds) <= period.FromUtc) continue;
             switch (row.Kind)
@@ -128,9 +141,10 @@ public sealed partial class ReportService(string databasePath, ThresholdConfig? 
             "Daily NVMe intervals end at each day's last observation. Use their actual endpoint timestamps; incomplete days are excluded from daily baseline statistics.",
             "Positive file-size growth is metadata, not bytes written. Correlation is temporal overlap and does not establish causation. CPU temperature and fan speed are not measured."
         };
+        if (excludedIdleSeconds > 0) limitations.Add(FormattableString.Invariant($"disk.idle: excluded {excludedIdleSeconds:F3} metric-seconds from legacy buckets with values outside 0..100; valid coverage is reduced, other metrics are retained."));
         if (anomalyEvents.Count == 10000) limitations.Add("Anomaly details are capped at 10,000 events for one query; request a shorter period for full detail.");
         if (p.ObservedSeconds == 0) limitations.Add("No valid fast observations were found in this period; unavailable metrics remain null.");
-        return new(1, "0.2.0", p, system, agents, disk,
+        return new(1, "0.2.1", p, system, agents, disk,
             files.Values.Select(f => new HotFileReport(f.Name, f.FirstUtc, f.LastUtc, f.FirstSizeBytes, f.LastSizeBytes, f.MaximumSizeBytes, f.PositiveGrowthBytes, f.Observations, f.MissingObservations, f.Errors)).ToArray(),
             anomalyEvents.Select(a => new AnomalyReport(a.StartUtc, a.EndUtc, a.Type, a.Severity, a.Agent, a.Summary, a.Evidence, a.Open)).ToArray(),
             Self(total), daily.Select(d => new DailyUsageReport(DateTimeOffset.FromUnixTimeSeconds(d.Key), d.Value[Metric.Coverage].Sum,

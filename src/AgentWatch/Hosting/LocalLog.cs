@@ -22,9 +22,9 @@ public sealed class LocalLog
     }
     public void BeginRun(AgentWatch.Configuration.WatchConfig config, string mode)
     {
-        record = new(RunId, "0.2.0", DateTimeOffset.UtcNow, null, Environment.ProcessId, mode, "started", config.Sampling, 0);
+        record = new(RunId, "0.2.1", DateTimeOffset.UtcNow, null, Environment.ProcessId, mode, "started", config.Sampling, 0);
         RunJournal.Save(RunDirectory, record, true);
-        Write("INFO", $"Run {RunId} started; AgentWatch 0.2.0, mode={mode}.");
+        Write("INFO", $"Run {RunId} started; AgentWatch 0.2.1, mode={mode}.");
     }
     public void Complete(string outcome)
     {

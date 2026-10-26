@@ -45,7 +45,7 @@ public sealed record WeeklyReport(int SchemaVersion, string AppVersion, DateTime
 
 public sealed partial class ReportService
 {
-    public WeeklyReport GetWeeklyReport(QueryPeriod period, string? marksDirectory = null, CancellationToken cancellationToken = default, string? usageDirectory = null, string? pricingPath = null)
+    public WeeklyReport GetWeeklyReport(QueryPeriod period, string? marksDirectory = null, CancellationToken cancellationToken = default, string? usageDirectory = null, string? pricingPath = null, string? runDirectory = null, DateTimeOffset? generatedUtc = null)
     {
         if ((period.ToUtc - period.FromUtc).TotalDays > 31)
             throw new ArgumentException("Weekly analysis is limited to 31 days; request a shorter period.");
@@ -53,8 +53,8 @@ public sealed partial class ReportService
         var usage = UsageStore.Read(usageDirectory ?? UsageStore.DefaultDirectory, period, UsagePricing.Load(pricingPath));
         var analysis = new WeeklyAnalysis(period, markers, usage);
         var report = ReadReport(period, cancellationToken, analysis);
-        var runs = RunJournal.Read(Path.GetDirectoryName(Path.GetFullPath(databasePath))!, period.FromUtc, period.ToUtc);
-        return analysis.Build(report, markers, runs, sampling ?? new());
+        var runs = RunJournal.Read(runDirectory ?? Path.GetDirectoryName(Path.GetFullPath(databasePath))!, period.FromUtc, period.ToUtc);
+        return analysis.Build(report, markers, runs, sampling ?? new(), generatedUtc);
     }
 }
 
@@ -89,12 +89,12 @@ internal sealed class WeeklyAnalysis
         selfIoValidSeconds += frame[Metric.SelfLogicalWrite].Weight;
     }
 
-    public WeeklyReport Build(WatchReport report, MarkerInventory markers, RunInventory runs, SamplingConfig sampling)
+    public WeeklyReport Build(WatchReport report, MarkerInventory markers, RunInventory runs, SamplingConfig sampling, DateTimeOffset? generatedUtc = null)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = generatedUtc ?? DateTimeOffset.UtcNow;
         var quality = Quality(report, now, sampling);
         var episodes = selector.Finish();
-        var result = new WeeklyReport(1, "0.2.0", now, report, quality, Findings(report, quality), episodes, selector.MatchingCount, markers, runs,
+        var result = new WeeklyReport(1, "0.2.1", now, report, quality, Findings(report, quality), episodes, selector.MatchingCount, markers, runs,
         [
             "Выводы относятся к наблюдаемому времени. Пропуски включают сон, остановки и недоступность наблюдения; это не измеренное время работы компьютера.",
             "Эпизоды выбраны по агрегатам: RAM <512 МиБ, средний CPU >=80%, либо logical writes агента >=100 МиБ/мин. Это ориентиры для проверки, не диагноз.",
@@ -116,7 +116,7 @@ internal sealed class WeeklyAnalysis
         var edge = p.FirstIncludedBucketUtc < p.FromUtc || p.LastIncludedBucketEndUtc > p.ToUtc;
         MetricCoverage C(string metric, double seconds) => new(metric, seconds, observed > 0 ? 100 * seconds / observed : null);
         var metrics = new[] { C("system.cpu", r.System.Cpu.TotalPercent.ValidSeconds), C("system.memory", r.System.Memory.AvailableBytes.ValidSeconds),
-            C("paging.pageOut", r.System.Paging.PagesOutputPerSecond.ValidSeconds), C("disk.write", diskWriteValidSeconds), C("disk.queue", r.Storage.QueueLength.ValidSeconds), C("memoryPaging.joint", jointMemoryPagingValidSeconds), C("monitor.logicalIo", selfIoValidSeconds),
+            C("paging.pageOut", r.System.Paging.PagesOutputPerSecond.ValidSeconds), C("disk.write", diskWriteValidSeconds), C("disk.queue", r.Storage.QueueLength.ValidSeconds), C("disk.idle", r.Storage.IdlePercent.ValidSeconds), C("memoryPaging.joint", jointMemoryPagingValidSeconds), C("monitor.logicalIo", selfIoValidSeconds),
             C("agents.codex.logicalIo", r.Agents["codex"].LogicalIoValidSeconds), C("agents.claude.logicalIo", r.Agents["claude"].LogicalIoValidSeconds),
             C("monitor.cpu", r.AgentWatch.CpuPercent.ValidSeconds), C("monitor.memory", r.AgentWatch.WorkingSetBytes.ValidSeconds) };
         DateTimeOffset? last = Metadata.TryGetValue("lastSampleUtc", out var lastText)
@@ -142,6 +142,7 @@ internal sealed class WeeklyAnalysis
         if (freshness != "fresh") notes.Add("Последние сохранённые данные не подтверждают свежий сбор; проверьте status и журнал запуска.");
         if (r.Storage.Nvme is null || r.Storage.Nvme.BaselineLearning) notes.Add("Нет семи полных суточных интервалов NVMe; baseline ещё не сформирован.");
         if (r.AgentWatch.MissedSamples > 0 || r.AgentWatch.CollectorErrors > 0) notes.Add("В периоде зарегистрированы пропуски опроса или ошибки сборщиков.");
+        notes.AddRange(r.Limitations.Where(x => x.StartsWith("disk.idle:", StringComparison.Ordinal)));
         var coreIncomplete = metrics.Take(4).Any(m => m.PercentOfObservedTime is null or < 90);
         var state = observed <= 0 ? "no-data" : coreIncomplete || observed < 1800 ? "limited" : "usable-for-observed-time";
         return new(state, requested, span, observed, Math.Max(0, span - observed), span > 0 ? 100 * observed / span : null,

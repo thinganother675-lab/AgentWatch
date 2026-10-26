@@ -33,7 +33,7 @@ public sealed class WatchRuntime(WatchConfig config, string dataDirectory, Local
                 detector.Event(startedUtc, "service-restart-gap", "info", "Service restarted; process counters are re-baselined and unobserved time is excluded.",
                     new() { ["secondsSinceLastPersistedSample"] = Math.Max(0, (startedUtc - oldUtc).TotalSeconds) });
         }
-        log.Write("INFO", "AgentWatch 0.2.0 starting; local collection only.");
+        log.Write("INFO", "AgentWatch 0.2.1 starting; local collection only.");
         var latest = engine.Collect();
         collecting.HotFiles.AddRange(engine.CollectHotFiles()); detector.EvaluateHotFiles(collecting.HotFiles);
         engine.StartNvme();
@@ -56,7 +56,7 @@ public sealed class WatchRuntime(WatchConfig config, string dataDirectory, Local
         {
             if (shutdown) collecting.Frames.AddRange(aggregator.Drain(DateTimeOffset.UtcNow, true));
             collecting.Anomalies.AddRange(detector.Drain());
-            collecting.Metadata["appVersion"] = "0.2.0";
+            collecting.Metadata["appVersion"] = "0.2.1";
             collecting.Metadata["runId"] = log.RunId;
             collecting.Metadata["logFailures"] = log.Failures.ToString(System.Globalization.CultureInfo.InvariantCulture);
             collecting.Metadata["persistBatchSeconds"] = (config.Sampling.PersistBatchMinutes * 60).ToString(System.Globalization.CultureInfo.InvariantCulture);

@@ -28,6 +28,7 @@ public sealed class CommandOptions
         if (Command is "--version") Command = "version";
         var allowed = new HashSet<string>(["--data-dir", "--json", "--help"]);
         if (Command is "report" or "agents" or "disk" or "anomalies" or "self") allowed.UnionWith(["--since", "--from", "--to"]);
+        if (Command == "analyze") allowed.UnionWith(["--since", "--from", "--to", "--timezone", "--output", "--marks-dir", "--usage-dir", "--prices"]);
         if (Command == "run") allowed.Add("--duration");
         if (Command == "weekly") allowed.UnionWith(["--since", "--from", "--to", "--marks-dir", "--output"]);
         if (Command == "mark") allowed.UnionWith(["--note", "--at", "--marks-dir"]);
@@ -92,7 +93,7 @@ public static class Commands
     {
         var options = new CommandOptions(args);
         if (options.Command == "help" || options.Has("--help")) { Help(); return 0; }
-        if (options.Command == "version") { Console.WriteLine("AgentWatch 0.2.0 / report schema 1 / database schema 1"); return 0; }
+        if (options.Command == "version") { Console.WriteLine("AgentWatch 0.2.1 / report schema 1 / database schema 1"); return 0; }
         if (!OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000) || !Environment.Is64BitProcess)
             throw new PlatformNotSupportedException("AgentWatch supports Windows 11 x64 only.");
         var data = Path.GetFullPath(options["--data-dir"] ?? WatchConfig.DefaultDataDirectory);
@@ -121,6 +122,12 @@ public static class Commands
         foreach (var warning in warnings) Console.Error.WriteLine("WARN: " + warning);
         switch (options.Command)
         {
+            case "analyze":
+                var zone = options["--timezone"] is { } zoneId ? TimeZoneInfo.FindSystemTimeZoneById(zoneId) : TimeZoneInfo.Local;
+                var bundle = AnalysisBundle.Create(data, options["--output"] ?? throw new ArgumentException("analyze requires --output (a new directory)."),
+                    options.Period("7d"), zone, config, options["--marks-dir"], options["--usage-dir"], options["--prices"]);
+                if (options.Has("--json")) Json(bundle); else Console.WriteLine("Анализ сохранён: " + Path.GetFullPath(options["--output"]!) + "; откройте summary.md.");
+                return 0;
             case "snapshot":
                 using (var engine = new CollectorEngine(config, data))
                 { var snapshot = await engine.Snapshot(); if (options.Has("--json")) Json(snapshot); else TextOutput.Snapshot(snapshot); }
@@ -228,7 +235,7 @@ public static class Commands
         var last = metadata.TryGetValue("lastSampleUtc", out var time) && DateTimeOffset.TryParse(time, out var parsed) ? parsed : (DateTimeOffset?)null;
         var collectors = metadata.TryGetValue("collectors", out var health) ? JsonSerializer.Deserialize<List<CollectorHealth>>(health, JsonDefaults.Compact) ?? [] : new List<CollectorHealth>();
         double? uptime = metadata.TryGetValue("uptimeSeconds", out var up) && double.TryParse(up, CultureInfo.InvariantCulture, out var seconds) ? seconds : null;
-        return new("0.2.0", state, path, exists, CollectorEngine.FileSize(path), CollectorEngine.FileSize(path + "-wal"), last,
+        return new("0.2.1", state, path, exists, CollectorEngine.FileSize(path), CollectorEngine.FileSize(path + "-wal"), last,
             last.HasValue ? (DateTimeOffset.UtcNow - last.Value).TotalSeconds : null, metadata.GetValueOrDefault("state"), uptime, collectors, error);
     }
     private static async Task<DoctorResult> Doctor(WatchConfig config, string data)
@@ -272,11 +279,11 @@ public static class Commands
         checks.Add(new(snapshot.MonitoredUserProfile is null ? "WARN" : "OK", "Monitored profile", snapshot.MonitoredUserProfile ?? "Configure monitoredUserProfile at installation; LocalSystem has a different profile."));
         foreach (var health in snapshot.Collectors) checks.Add(new(health.State == "ERROR" ? "WARN" : health.State, health.Name, health.Detail ?? "Native collector available."));
         checks.Add(new(snapshot.Nvme is not null ? "OK" : "WARN", "PhysicalDrive/NVMe", $"Configured PhysicalDrive{config.PhysicalDriveNumber}; SMART is {(snapshot.Nvme is null ? "unavailable for this token/driver" : "readable through IOCTL_STORAGE_QUERY_PROPERTY")}."));
-        return new("0.2.0", DateTimeOffset.UtcNow, checks, snapshot, status);
+        return new("0.2.1", DateTimeOffset.UtcNow, checks, snapshot, status);
     }
     public static void Json<T>(T value) => Console.WriteLine(JsonSerializer.Serialize(value, JsonDefaults.Options));
     private static void Help() => Console.WriteLine("""
-        AgentWatch 0.2.0 — local Windows AI-workload observability
+        AgentWatch 0.2.1 — local Windows AI-workload observability
         AgentWatch.exe install [--profile C:\Users\Name] [--reader-sid S-1-5-21-...]
         AgentWatch.exe uninstall [--purge-data --confirm-purge]
         AgentWatch.exe service
@@ -288,6 +295,7 @@ public static class Commands
         AgentWatch.exe mark --note "Что тормозило" [--at 2026-09-07T16:00:00+03:00]
         AgentWatch.exe runs [--since 7d] [--json]
         AgentWatch.exe mark "ноут начал тормозить" [--at ISO-with-offset]
+        AgentWatch.exe analyze --since 7d --timezone "Arab Standard Time" --output C:\reports\new-analysis [--json]
         AgentWatch.exe usage-sync [--since 7d] [--max-mib 64] [--json]
         AgentWatch.exe usage-sync --agent codex|claude --file C:\path\session.jsonl
         AgentWatch.exe sessions | events [--since 7d] [--json]
